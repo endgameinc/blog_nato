@@ -1,0 +1,235 @@
+
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+body {
+  font: normal 100%/1.5 'Gotham A', 'Gotham B', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 12px;
+}
+
+#chart {
+  border: 1px solid #000;
+  background-color: #e9faff;
+  width: 800px;
+  height: 400px;
+  position: relative;
+}
+
+.subunit { 
+  stroke-dasharray: 4,2;
+  stroke: #666;
+  cursor: pointer;
+}
+
+.legend {
+  height: 20px;
+  position: absolute;
+  bottom: 8px;
+  left: 4px;
+}
+
+.key {
+  padding: 4px;
+  background-color: #fff;
+  opacity: 0.9;
+  width: 140px;
+  height: 78px;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+.key div{
+  margin-bottom: 2px;
+}
+
+text {
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.year {
+  padding: 6px;
+  background-color: #fff;
+  opacity: 0.8;
+  margin-right: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.year.active {
+  background-color: #000;
+  color: #fff;
+}
+
+.swatch {
+  height: 18px;
+  width: 18px;
+  margin-right: 4px;
+  float: left;
+} 
+
+.d3-tip {
+  line-height: 1;
+  font-weight: bold;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Creates a small triangle extender for the tooltip */
+.d3-tip:after {
+  box-sizing: border-box;
+  display: inline;
+  font-size: 10px;
+  width: 100%;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.8);
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Northward tooltips */
+.d3-tip.n:after {
+  content: "\25BC";
+  margin: -2px 0 0 0;
+  top: 100%;
+  left: 0;
+  text-align: center;
+}
+
+</style>
+<body>
+<script src="/bower_components/underscore/underscore-min.js"></script>
+<script src="/bower_components/d3/d3.min.js"></script>
+<script src="/bower_components/topojson/topojson.js"></script>
+<script type="text/javascript" src="/bower_components/d3-tip/index.js"></script>
+<script>
+
+var width = 800,
+    height = 400;
+
+var projection = d3.geo.mercator()
+    .scale(380)
+    .translate([200, 610]);
+
+var path = d3.geo.path()
+    .projection(projection)
+    .pointRadius(2);
+
+var key = [
+            {'key':'N','name':'NATO','color':'#68a3aa'},
+            {'key':'C','name':'NATO Collaborators','color':'#89D9E0'}, 
+            {'key':'U','name':'Soviet Union/Russia','color':'#ca382c'},
+            {'key':'W','name':'Warsaw Pact','color':'#E8B4AC'}, 
+          ];
+
+var tip = d3.tip()
+        .attr('class', 'd3-tip')
+        .html(function(d){return d.properties.name})
+        .direction('n');
+
+d3.json("europe.json", function(error, countries) {
+  var subunits = topojson.feature(countries, countries.objects.subunits)
+  
+  d3.csv("nato.csv", function(error, nato) {
+
+    var svg = d3.select("#chart").append("svg")
+      .attr("width", width)
+      .attr("height", height)
+      .attr("overflow", "hidden")
+      .call(tip);
+      
+    var cursor = svg.append('circle')
+      .attr('r',10).attr('fill','none');
+
+    var years = ['1965-1980','1985-1990','1995','2000','2005','2010','2014'];
+    var selectedYear = 0;
+    var cc = _.pluck(nato,"CountryCode");
+    var playing = true;
+    
+
+    svg.selectAll(".subunit")
+        .data(subunits.features)
+      .enter().append("path")
+        .attr("class", function(d){ return "subunit " + d.properties.adm0_a3;})
+        .attr('fill','#efefef')
+        .attr("d", path)
+        .on('mousemove',function(d){
+          var coords = d3.mouse(this);
+          cursor.attr('cx',coords[0]).attr('cy',coords[1]);
+          tip.show(d,cursor.node());
+        })        
+        .on('mouseout',function(d){
+          tip.hide();
+        })
+
+    var setColors = function(year){
+      clearColors();
+      d3.select('.year-'+year).classed('active',true);
+      nato.forEach(function(d){
+        match = _.findWhere(key,{'key':d[year]});
+        if (match){
+          svg.selectAll('.subunit.'+d.CountryCode)
+            .transition().duration(500)
+            .attr('fill', match.color);
+        }
+      });
+    }
+
+    var clearColors = function(){
+      d3.selectAll('.year').classed('active',false);
+      svg.selectAll('.subunit')
+        .transition().duration(500)
+        .attr('fill','#efefef');
+    }
+
+    d3.select('.legend').selectAll('span')
+      .data(years)
+      .enter()
+        .append('span')
+        .attr('class',function(d){return ' year year-'+d;})
+        .text(function(d){return d;})
+        .on('mouseover',function(d){
+            playing = false;
+            setColors(d);
+        })
+        .on('mouseout',function(){
+            selectedYear = -1;
+            playing = true;
+        });
+
+     var keydiv = d3.select('.key').selectAll('div')
+          .data(key)
+        .enter()
+          .append('div');
+
+        keydiv.append('div')
+          .attr('class','swatch')
+          .style('background-color',function(d){return d.color});
+          
+        keydiv.append('span')
+          .text(function(d) { return d.name; });
+
+    setColors(years[selectedYear]);
+    cycle = setInterval(function(){
+      if (playing){
+        if (++selectedYear >= years.length){
+          selectedYear = 0;
+        }
+        setColors(years[selectedYear]);
+      }
+    },2000);
+  });
+});
+
+</script>
+<div id="chart">
+  <div class="key"></div>
+  <div class="legend"></div>
+</div>
+</body>
+</html>
